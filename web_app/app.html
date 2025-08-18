@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Parking Lot Free Spaces BLE</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial, sans-serif; margin:2em; }
+        .section { margin-bottom: 2em; }
+        label, .label { font-weight:bold; }
+        #status { color:#d13a30; }
+        #freeSpaces { font-size:2em; color:#2065d0; }
+        #errorMsg { color: red; margin-top:0.5em; }
+    </style>
+</head>
+<body>
+    <h2>Parking Lot Web BLE</h2>
+    <div class="section">
+        <button id="connectBtn">Connect to BLE Device</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+        <span id="status">Disconnected</span>
+    </div>
+    <div class="section">
+        <div class="label">Number of Free Spaces:</div>
+        <div id="freeSpaces">?</div>
+        <div>Last update: <span id="lastUpdate">never</span></div>
+    </div>
+    <div class="section">
+        <div class="label">Update number of free spaces</div>
+        <input type="text" id="freeSpacesInput" placeholder="Enter number" style="font-size:1.1em;" autocomplete="off">
+        <button id="saveBtn" disabled>Save update</button>
+        <div id="errorMsg"></div>
+    </div>
+<script>
+const SERVICE_UUID = '8c055cbe-b517-4134-bb83-a4c4b05944ba';
+const SENSOR_CHAR_UUID = '24b27f5a-8187-467c-81c9-b4480741d580';
+
+let bleDevice = null;
+let bleServer = null;
+let sensorChar = null;
+
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const statusSpan = document.getElementById('status');
+const freeSpacesDiv = document.getElementById('freeSpaces');
+const freeSpacesInput = document.getElementById('freeSpacesInput');
+const saveBtn = document.getElementById('saveBtn');
+const errorMsg = document.getElementById('errorMsg');
+const lastUpdate = document.getElementById('lastUpdate');
+
+function setConnectedUI(connected) {
+    statusSpan.textContent = connected ? 'Connected' : 'Disconnected';
+    statusSpan.style.color = connected ? '#24af37' : '#d13a30';
+    connectBtn.disabled = connected;
+    disconnectBtn.disabled = !connected;
+    saveBtn.disabled = !connected;
+}
+
+function updateFreeSpacesDisplay(val) {
+    freeSpacesDiv.textContent = val;
+    lastUpdate.textContent = new Date().toLocaleTimeString();
+}
+
+async function connectToBle() {
+    errorMsg.textContent = '';
+    try {
+        bleDevice = await navigator.bluetooth.requestDevice({
+            filters: [{services: [SERVICE_UUID]}]
+        });
+        bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        bleServer = await bleDevice.gatt.connect();
+        const service = await bleServer.getPrimaryService(SERVICE_UUID);
+        sensorChar = await service.getCharacteristic(SENSOR_CHAR_UUID);
+
+        setConnectedUI(true);
+
+        // Get current value
+        const initialValue = await sensorChar.readValue();
+        const fsCount = new TextDecoder().decode(initialValue);
+        updateFreeSpacesDisplay(fsCount);
+
+        // Enable notifications
+        await sensorChar.startNotifications();
+        sensorChar.addEventListener('characteristicvaluechanged', handleNotification);
+    } catch (e) {
+        errorMsg.textContent = "BLE Connection failed: " + e;
+        setConnectedUI(false);
+    }
+}
+
+function onDisconnected() {
+    setConnectedUI(false);
+    freeSpacesDiv.textContent = "?";
+    lastUpdate.textContent = "never";
+    errorMsg.textContent = "Device disconnected.";
+}
+
+function handleNotification(event) {
+    const value = new TextDecoder().decode(event.target.value);
+    updateFreeSpacesDisplay(value);
+}
+
+async function disconnectBle() {
+    if (bleDevice && bleDevice.gatt.connected) {
+        await bleDevice.gatt.disconnect();
+    }
+}
+
+async function saveUpdate() {
+    errorMsg.textContent = "";
+    let value = freeSpacesInput.value.trim();
+    if (!/^-?\d+$/.test(value)) {
+        errorMsg.textContent = "invalid input";
+        return;
+    }
+    let encoder = new TextEncoder();
+    try {
+        await sensorChar.writeValue(encoder.encode(value));
+        errorMsg.style.color = "green";
+        errorMsg.textContent = "Update sent!";
+        setTimeout(() => { errorMsg.textContent=""; errorMsg.style.color = "red"; }, 1200);
+        freeSpacesInput.value = '';
+    } catch (e) {
+        errorMsg.textContent = "Write failed: " + e;
+    }
+}
+
+connectBtn.addEventListener('click', connectToBle);
+disconnectBtn.addEventListener('click', disconnectBle);
+saveBtn.addEventListener('click', saveUpdate);
+
+setConnectedUI(false);
+</script>
+</body>
+</html>
