@@ -81,6 +81,9 @@ class MySensorCharacteristicCallbacks : public BLECharacteristicCallbacks {
         update_all_freeSpaces();
       } else if (rxStr.equalsIgnoreCase("dec")) {
         freeSpaces--;
+        if (freeSpaces < 0) {
+            freeSpaces = 0;
+        }
         showCounter();
         update_all_freeSpaces();
       } else if (rxStr.length() > 0 && rxStr.toInt() == rxStr.toFloat()) {
