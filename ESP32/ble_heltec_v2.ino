@@ -17,7 +17,7 @@
 #define LORA_SYMBOL_TIMEOUT         0
 #define LORA_FIX_LENGTH_PAYLOAD_ON  false
 #define LORA_IQ_INVERSION_ON        false
-#define BUFFER_SIZE                 8
+#define BUFFER_SIZE                 16
 
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED);
 char rxpacket[BUFFER_SIZE];
@@ -31,8 +31,16 @@ bool oldDeviceConnected = false;
 
 int freeSpaces = 0;
 
+void OnTxDone(void) {
+    lora_idle = true;
+}
+void OnTxTimeout(void) {
+    lora_idle = true;
+}
+
 // =========== LoRa packet sending function =============
 void update_all_freeSpaces() {
+  
     // LoRa packet: 0x42e1 prefix (2 bytes), then freeSpaces as int32_t (big endian)
     uint8_t packet[6];
     packet[0] = 0x42;   // prefix
@@ -82,7 +90,7 @@ class MySensorCharacteristicCallbacks : public BLECharacteristicCallbacks {
       } else if (rxStr.equalsIgnoreCase("dec")) {
         freeSpaces--;
         if (freeSpaces < 0) {
-            freeSpaces = 0;
+          freeSpaces = 0;
         }
         showCounter();
         update_all_freeSpaces();
@@ -120,6 +128,8 @@ void setup() {
 
   Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
   RadioEvents.RxDone = OnRxDone;
+  RadioEvents.TxDone = OnTxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
   Radio.Init(&RadioEvents);
   Radio.SetChannel(RF_FREQUENCY);
   Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
