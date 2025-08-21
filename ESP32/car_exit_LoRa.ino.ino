@@ -43,7 +43,7 @@ void showWaiting() {
   display.display();
 }
 
-void showCarEntered() {
+void showCarExited() {
   display.clear();
   display.drawString(display.getWidth()/2, display.getHeight()/2-8, "car has exited");
   display.display();
@@ -97,7 +97,7 @@ void loop() {
       strcpy(txpacket, "inc");
       Serial.printf("[HC-SR04] Object for >1s, sending \"%s\"\n", txpacket);
       Radio.Send((uint8_t *)txpacket, strlen(txpacket));
-      showCarEntered();
+      showCarExited();
       showEventMessage = true;
       eventMessageStart = millis();
       lora_idle = false;
