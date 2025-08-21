@@ -3,13 +3,11 @@
 #include "Arduino.h"
 #include "HT_SSD1306Wire.h"
 
-// -------- HC-SR04 pins and setup --------
 #define TRIGGER_PIN   7
 #define ECHO_PIN      6
 #define MAX_DISTANCE  300
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 
-// -------- LoRa setup --------
 #define RF_FREQUENCY          915000000
 #define TX_OUTPUT_POWER       5
 #define LORA_BANDWIDTH        0
@@ -27,16 +25,15 @@ static RadioEvents_t RadioEvents;
 void OnTxDone(void)        { lora_idle = true; }
 void OnTxTimeout(void)     { Radio.Sleep(); lora_idle = true; }
 
-// -------- OLED setup --------
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED);
 void VextON()  { pinMode(Vext,OUTPUT); digitalWrite(Vext, LOW); }
 
-// -------- Detection & State logic --------
 const float TARGET_DIST_M = 1.0;
 const uint32_t REQUIRED_MS = 1000;
-bool prevInRange = false;
+// State flags
+bool prevInRange = false;      // Was an object previously in range
 unsigned long inRangeStart = 0;
-bool sentEvent = false;
+bool sentEvent = false;        // True if we've already sent dec for current detection
 bool showEventMessage = false;
 unsigned long eventMessageStart = 0;
 
@@ -46,9 +43,9 @@ void showWaiting() {
   display.display();
 }
 
-void showCarLeft() {
+void showCarEntered() {
   display.clear();
-  display.drawString(display.getWidth()/2, display.getHeight()/2-8, "car has left");
+  display.drawString(display.getWidth()/2, display.getHeight()/2-8, "car has exited");
   display.display();
 }
 
@@ -74,7 +71,7 @@ void loop() {
   float dist_m  = dist_cm / 100.0;
   unsigned long now = millis();
 
-  // If we're currently showing the "car has left" message, wait 3s before returning to waiting
+  // Display event message for 3 seconds, then return to waiting
   if (showEventMessage) {
     if (now - eventMessageStart >= 3000) {
       showEventMessage = false;
@@ -100,7 +97,7 @@ void loop() {
       strcpy(txpacket, "inc");
       Serial.printf("[HC-SR04] Object for >1s, sending \"%s\"\n", txpacket);
       Radio.Send((uint8_t *)txpacket, strlen(txpacket));
-      showCarLeft();
+      showCarEntered();
       showEventMessage = true;
       eventMessageStart = millis();
       lora_idle = false;
