@@ -4,16 +4,16 @@
 #include <Adafruit_Protomatter.h>
 #include <Fonts/FreeSansBold18pt7b.h>
 
-#define RF_FREQUENCY          915000000
-#define LORA_BANDWIDTH        0
+#define RF_FREQUENCY 915000000
+#define LORA_BANDWIDTH 0
 #define LORA_SPREADING_FACTOR 7
-#define LORA_CODINGRATE       1
-#define LORA_PREAMBLE_LENGTH  8
-#define LORA_SYMBOL_TIMEOUT   0
+#define LORA_CODINGRATE 1
+#define LORA_PREAMBLE_LENGTH 8
+#define LORA_SYMBOL_TIMEOUT 0
 #define LORA_FIX_LENGTH_PAYLOAD_ON false
-#define LORA_IQ_INVERSION_ON       false
+#define LORA_IQ_INVERSION_ON false
 
-#define BUFFER_SIZE        16
+#define BUFFER_SIZE 16
 
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED);
 
@@ -24,63 +24,66 @@ bool lora_idle = true;
 int freeSpaces = 0;
 
 //Initiliaze LED Matrix
-uint8_t rgbPins[]  = {20, 5, 21, 26, 4, 48}; //R1 G1 B1, R2, G2, B2
-uint8_t addrPins[] = {47, 3, 33, 2}; //A, B, C, D
-uint8_t clockPin   = 19;
-uint8_t latchPin   = 1;
-uint8_t oePin      = 34;
+uint8_t rgbPins[] = { 20, 5, 35, 26, 4, 48 };  //R1 G1 B1, R2, G2, B2
+uint8_t addrPins[] = { 47, 3, 33, 2 };         //A, B, C, D
+uint8_t clockPin = 19;
+uint8_t latchPin = 38;
+uint8_t oePin = 34;
 
 Adafruit_Protomatter matrix(
-  64, 4, 1, rgbPins, 4, addrPins, clockPin, latchPin, oePin, false);
+  64, 4, 1, rgbPins, 4, addrPins, clockPin, latchPin, oePin, true);
 
-void VextON(void) { pinMode(Vext,OUTPUT); digitalWrite(Vext, LOW); }
+void VextON(void) {
+  pinMode(Vext, OUTPUT);
+  digitalWrite(Vext, LOW);
+}
 
 void showCounter() {
   if (freeSpaces > 200) {
     freeSpaces = 200;
   }
+
   display.clear();
   display.setFont(ArialMT_Plain_16);
   display.setTextAlignment(TEXT_ALIGN_CENTER);
   String outStr = "Free Spaces: " + String(freeSpaces);
-  display.drawString(display.getWidth()/2, display.getHeight()/2-8, outStr);
+  display.drawString(display.getWidth() / 2, display.getHeight() / 2 - 8, outStr);
   display.display();
 
-  matrix.fillScreen(0);
   //TODO: Add centering and nicer format
   if (freeSpaces < 10) {
     matrix.setCursor(22, 27);
-  }
-  else if (freeSpaces < 100){
+  } else if (freeSpaces < 100) {
     matrix.setCursor(12, 27);
-  }
-  else if (freeSpaces > 99) {
+  } else if (freeSpaces > 99) {
     matrix.setCursor(3, 27);
   }
-  //matrix.fillScreen(0); //Make background black
+
+  matrix.fillScreen(0);
   matrix.println(String(freeSpaces));
   matrix.show();
 }
 
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
-  if(size >= 6 && payload[0]==0x42 && payload[1]==0xe1) {
-    freeSpaces = ((int32_t)payload[2]<<24) | ((int32_t)payload[3]<<16) | ((int32_t)payload[4]<<8) | ((int32_t)payload[5]);
+  if (size >= 6 && payload[0] == 0x42 && payload[1] == 0xe1) {
+    freeSpaces = ((int32_t)payload[2] << 24) | ((int32_t)payload[3] << 16) | ((int32_t)payload[4] << 8) | ((int32_t)payload[5]);
     showCounter();
-  } 
-  else {
-    memcpy(rxpacket, payload, size); rxpacket[size] = '\0';
-    if (strcmp(rxpacket, "inc") == 0) { 
-      freeSpaces++; 
+  } else {
+    memcpy(rxpacket, payload, size);
+    rxpacket[size] = '\0';
+    if (strcmp(rxpacket, "inc") == 0) {
+      freeSpaces++;
       if (freeSpaces > 200) {
         freeSpaces = 200;
       }
-      showCounter(); }
-    else if (strcmp(rxpacket, "dec") == 0) { 
-        freeSpaces--; 
-        if (freeSpaces < 0) {
-            freeSpaces = 0;
-        }
-        showCounter(); }
+      showCounter();
+    } else if (strcmp(rxpacket, "dec") == 0) {
+      freeSpaces--;
+      if (freeSpaces < 0) {
+        freeSpaces = 0;
+      }
+      showCounter();
+    }
   }
   Radio.Sleep();
   lora_idle = true;
@@ -88,32 +91,40 @@ void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
 
 void setup() {
   Serial.begin(115200);
-  VextON(); delay(100);
-  
+  VextON();
+  delay(100);
+
   //Initialize Matrix
   ProtomatterStatus status = matrix.begin();
   Serial.print("Protomatter begin() status: ");
   Serial.println((int)status);
-  if(status != PROTOMATTER_OK) {
-    for(;;);
+  if (status != PROTOMATTER_OK) {
+    for (;;)
+      ;
   }
-  matrix.setFont(&FreeSansBold18pt7b); // Use nice bitmap font
-  matrix.setTextColor(0xFFFF);         // White
+  matrix.setFont(&FreeSansBold18pt7b);  // Use nice bitmap font
+  matrix.setTextColor(0xFFFF);          // White
 
-  display.init(); display.clear(); display.display();
-  display.setFont(ArialMT_Plain_16); display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.init();
+  display.clear();
+  display.display();
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
   showCounter();
 
-  Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
+  Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
   RadioEvents.RxDone = OnRxDone;
   Radio.Init(&RadioEvents);
   Radio.SetChannel(RF_FREQUENCY);
   Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
-    LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH, LORA_SYMBOL_TIMEOUT,
-    LORA_FIX_LENGTH_PAYLOAD_ON, 0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
+                    LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH, LORA_SYMBOL_TIMEOUT,
+                    LORA_FIX_LENGTH_PAYLOAD_ON, 0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
 }
 
 void loop() {
-  if (lora_idle) { Radio.Rx(0); lora_idle = false; }
+  if (lora_idle) {
+    Radio.Rx(0);
+    lora_idle = false;
+  }
   Radio.IrqProcess();
 }
