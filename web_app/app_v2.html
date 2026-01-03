@@ -1,51 +1,130 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>Parking Lot Free Spaces BLE</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: Arial, sans-serif; margin:2em; }
-        .centered { display:flex; flex-direction:column; align-items:center; justify-content:center; }
-        .section { margin-bottom: 2em; width:100%; text-align:center;}
-        label, .label { font-weight:bold; }
-        #status { color:#d13a30; }
-        #freeSpaces { font-size:2em; color:#2065d0; }
-        #errorMsg { color: red; margin-top:0.5em; min-height:1.1em;}
-        .button-row { display:flex; justify-content:center; margin-top:0.8em; gap:2em; }
-        button, input[type=text]{ font-size:1.1em; }
-        #min1 { margin-right:2em; width:3em; }
-        #plus1 { width:3em; }
-    </style>
+  <meta charset="utf-8">
+  <title>Parking Lot Free Spaces BLE</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    .centered {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .section { margin-bottom: 2em; width: 100%; max-width: 520px; }
+    .label { font-weight: bold; margin-bottom: 0.5em; }
+    #status { color: #d13a30; margin-left: 0.8em; }
+    #freeSpaces { font-size: 2em; color: #2065d0; }
+    #errorMsg { color: red; margin-top: 0.7em; min-height: 1.1em; }
+
+    .row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.8em;
+      flex-wrap: wrap;
+    }
+
+    button, input[type=text] { font-size: 1.1em; }
+    input[type=text]{
+      width: 10em;
+      text-align: center;
+      padding: 0.4em;
+    }
+
+    /* Keypad */
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 4.2em);
+      grid-auto-rows: 3.2em;
+      gap: 0.6em;
+      justify-content: center;
+      margin-top: 1em;
+      user-select: none;
+    }
+    .keypad button {
+      width: 4.2em;
+      height: 3.2em;
+      font-size: 1.2em;
+    }
+    .keypad .wide {
+      grid-column: span 2;
+      width: 100%;
+    }
+
+    /* Manual +/- */
+    .button-row { display:flex; justify-content:center; margin-top:0.8em; gap:2em; }
+    #min1, #plus1 { width: 4em; height: 2.6em; font-size: 1.2em; }
+  </style>
 </head>
+
 <body>
-<div class="centered">
+  <div class="centered">
     <h2>Parking Lot Display Manager</h2>
+
     <div class="section">
+      <div class="row">
         <button id="connectBtn">Connect</button>
         <button id="disconnectBtn" disabled>Disconnect</button>
         <span id="status">Disconnected</span>
+      </div>
     </div>
+
     <div class="section">
-        <div class="label">Number of Free Spaces:</div>
-        <div id="freeSpaces">?</div>
-        <div>Last update: <span id="lastUpdate">never</span></div>
+      <div class="label">Number of Free Spaces:</div>
+      <div id="freeSpaces">?</div>
+      <div>Last update: <span id="lastUpdate">never</span></div>
     </div>
+
     <div class="section">
-        <div class="label">Update Number of Free Spaces</div>
-        <input type="text" id="freeSpacesInput" placeholder="Enter number" style="font-size:1.1em;" autocomplete="off">
+      <div class="label">Set Number of Free Spaces</div>
+
+      <div class="row">
+        <!-- readonly prevents keyboard input -->
+        <input
+          type="text"
+          id="freeSpacesInput"
+          placeholder="Enter number"
+          readonly
+          inputmode="none"
+          autocomplete="off"
+        />
         <button id="saveBtn" disabled>Save update</button>
-        <div id="errorMsg"></div>
+      </div>
+
+      <!-- On-screen keypad -->
+      <div class="keypad" aria-label="Digit keypad">
+        <button type="button" class="digit" data-digit="1">1</button>
+        <button type="button" class="digit" data-digit="2">2</button>
+        <button type="button" class="digit" data-digit="3">3</button>
+
+        <button type="button" class="digit" data-digit="4">4</button>
+        <button type="button" class="digit" data-digit="5">5</button>
+        <button type="button" class="digit" data-digit="6">6</button>
+
+        <button type="button" class="digit" data-digit="7">7</button>
+        <button type="button" class="digit" data-digit="8">8</button>
+        <button type="button" class="digit" data-digit="9">9</button>
+
+        <button type="button" id="backspaceBtn">⌫</button>
+        <button type="button" class="digit" data-digit="0">0</button>
+        <button type="button" id="clearBtn">Clear</button>
+      </div>
+
+      <div id="errorMsg"></div>
     </div>
-    <div style="width:100%;">
-    </div>
-    <div class="label">Update Manually</div>
+
+    <div class="section">
+      <div class="label">Update Manually</div>
       <div class="button-row">
         <button id="min1" disabled>-1</button>
         <button id="plus1" disabled>+1</button>
       </div>
     </div>
-</div>
+  </div>
+
 <script>
 const SERVICE_UUID = '8c055cbe-b517-4134-bb83-a4c4b05944ba';
 const SENSOR_CHAR_UUID = '24b27f5a-8187-467c-81c9-b4480741d580';
@@ -65,106 +144,154 @@ const lastUpdate = document.getElementById('lastUpdate');
 const min1Btn = document.getElementById('min1');
 const plus1Btn = document.getElementById('plus1');
 
+const clearBtn = document.getElementById('clearBtn');
+const backspaceBtn = document.getElementById('backspaceBtn');
+const digitButtons = document.querySelectorAll('.digit');
+
+// Prevent focus/caret (extra kiosk hardening)
+freeSpacesInput.addEventListener('focus', () => freeSpacesInput.blur());
+freeSpacesInput.addEventListener('mousedown', (e) => e.preventDefault());
+freeSpacesInput.addEventListener('touchstart', (e) => e.preventDefault());
+
 function setConnectedUI(connected) {
-    statusSpan.textContent = connected ? 'Connected' : 'Disconnected';
-    statusSpan.style.color = connected ? '#24af37' : '#d13a30';
-    connectBtn.disabled = connected;
-    disconnectBtn.disabled = !connected;
-    saveBtn.disabled = !connected;
-    min1Btn.disabled = !connected;
-    plus1Btn.disabled = !connected;
+  statusSpan.textContent = connected ? 'Connected' : 'Disconnected';
+  statusSpan.style.color = connected ? '#24af37' : '#d13a30';
+  connectBtn.disabled = connected;
+  disconnectBtn.disabled = !connected;
+  saveBtn.disabled = !connected;
+  min1Btn.disabled = !connected;
+  plus1Btn.disabled = !connected;
+
+  // keypad buttons should also be disabled when disconnected
+  digitButtons.forEach(b => b.disabled = !connected);
+  clearBtn.disabled = !connected;
+  backspaceBtn.disabled = !connected;
 }
 
 function updateFreeSpacesDisplay(val) {
-    freeSpacesDiv.textContent = val;
-    lastUpdate.textContent = new Date().toLocaleTimeString();
+  freeSpacesDiv.textContent = val;
+  lastUpdate.textContent = new Date().toLocaleTimeString();
+}
+
+function showError(text) {
+  errorMsg.style.color = "red";
+  errorMsg.textContent = text;
+}
+
+function showSuccess(text) {
+  errorMsg.style.color = "green";
+  errorMsg.textContent = text;
+  setTimeout(() => { errorMsg.textContent=""; errorMsg.style.color="red"; }, 1200);
 }
 
 async function connectToBle() {
-    errorMsg.textContent = '';
-    try {
-        bleDevice = await navigator.bluetooth.requestDevice({
-            filters: [{services: [SERVICE_UUID]}]
-        });
-        bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
-
-        bleServer = await bleDevice.gatt.connect();
-        const service = await bleServer.getPrimaryService(SERVICE_UUID);
-        sensorChar = await service.getCharacteristic(SENSOR_CHAR_UUID);
-
-        setConnectedUI(true);
-
-        // Get current value
-        const initialValue = await sensorChar.readValue();
-        const fsCount = new TextDecoder().decode(initialValue);
-        updateFreeSpacesDisplay(fsCount);
-
-        // Enable notifications
-        await sensorChar.startNotifications();
-        sensorChar.addEventListener('characteristicvaluechanged', handleNotification);
-    } catch (e) {
-        errorMsg.textContent = "BLE Connection failed: " + e;
-        setConnectedUI(false);
+  errorMsg.textContent = '';
+  try {
+    if (!navigator.bluetooth) {
+      showError("Web Bluetooth not available in this browser.");
+      return;
     }
+
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }]
+    });
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+    bleServer = await bleDevice.gatt.connect();
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+    sensorChar = await service.getCharacteristic(SENSOR_CHAR_UUID);
+
+    setConnectedUI(true);
+
+    const initialValue = await sensorChar.readValue();
+    const fsCount = new TextDecoder().decode(initialValue);
+    updateFreeSpacesDisplay(fsCount);
+
+    await sensorChar.startNotifications();
+    sensorChar.addEventListener('characteristicvaluechanged', handleNotification);
+  } catch (e) {
+    showError("BLE Connection failed: " + e);
+    setConnectedUI(false);
+  }
 }
 
 function onDisconnected() {
-    setConnectedUI(false);
-    freeSpacesDiv.textContent = "?";
-    lastUpdate.textContent = "never";
-    errorMsg.textContent = "Device disconnected.";
+  setConnectedUI(false);
+  freeSpacesDiv.textContent = "?";
+  lastUpdate.textContent = "never";
+  showError("Device disconnected.");
 }
 
 function handleNotification(event) {
-    const value = new TextDecoder().decode(event.target.value);
-    updateFreeSpacesDisplay(value);
+  const value = new TextDecoder().decode(event.target.value);
+  updateFreeSpacesDisplay(value);
 }
 
 async function disconnectBle() {
-    if (bleDevice && bleDevice.gatt.connected) {
-        await bleDevice.gatt.disconnect();
-    }
+  if (bleDevice && bleDevice.gatt.connected) {
+    await bleDevice.gatt.disconnect();
+  }
+}
+
+function appendDigit(d) {
+  // Optional: prevent leading zeros like "00012"
+  if (freeSpacesInput.value === "0") freeSpacesInput.value = "";
+  freeSpacesInput.value += String(d);
+}
+
+function backspace() {
+  freeSpacesInput.value = freeSpacesInput.value.slice(0, -1);
+}
+
+function clearInput() {
+  freeSpacesInput.value = "";
 }
 
 async function saveUpdate() {
-    errorMsg.textContent = "";
-    let value = freeSpacesInput.value.trim();
-    if (!/^-?\d+$/.test(value)) {
-        errorMsg.textContent = "invalid input";
-        return;
-    }
-    let encoder = new TextEncoder();
-    try {
-        await sensorChar.writeValue(encoder.encode(value));
-        errorMsg.style.color = "green";
-        errorMsg.textContent = "Update sent!";
-        setTimeout(() => { errorMsg.textContent=""; errorMsg.style.color = "red"; }, 1200);
-        freeSpacesInput.value = '';
-    } catch (e) {
-        errorMsg.textContent = "Write failed: " + e;
-    }
+  errorMsg.textContent = "";
+  const value = freeSpacesInput.value.trim();
+
+  // Only allow digits (no negative sign for kiosk input unless you want it)
+  if (!/^\d+$/.test(value)) {
+    showError("invalid input");
+    return;
+  }
+
+  try {
+    const encoder = new TextEncoder();
+    await sensorChar.writeValue(encoder.encode(value));
+    showSuccess("Update sent!");
+    clearInput();
+  } catch (e) {
+    showError("Write failed: " + e);
+  }
 }
 
 async function changeByOne(delta) {
-    errorMsg.textContent = "";
-    try {
-        let encoder = new TextEncoder();
-        let cmd = (delta > 0) ? "inc" : "dec";
-        await sensorChar.writeValue(encoder.encode(cmd));
-        // Optionally give feedback for the command
-        errorMsg.style.color = "green";
-        errorMsg.textContent = "Update sent!";
-        setTimeout(() => { errorMsg.textContent=""; errorMsg.style.color = "red"; }, 1200);
-    } catch (e) {
-        errorMsg.textContent = "Write failed: " + e;
-    }
+  errorMsg.textContent = "";
+  try {
+    const encoder = new TextEncoder();
+    const cmd = (delta > 0) ? "inc" : "dec";
+    await sensorChar.writeValue(encoder.encode(cmd));
+    showSuccess("Update sent!");
+  } catch (e) {
+    showError("Write failed: " + e);
+  }
 }
 
+// Wire up events
 connectBtn.addEventListener('click', connectToBle);
 disconnectBtn.addEventListener('click', disconnectBle);
 saveBtn.addEventListener('click', saveUpdate);
+
 min1Btn.addEventListener('click', () => changeByOne(-1));
 plus1Btn.addEventListener('click', () => changeByOne(+1));
+
+digitButtons.forEach(btn => {
+  btn.addEventListener('click', () => appendDigit(btn.dataset.digit));
+});
+backspaceBtn.addEventListener('click', backspace);
+clearBtn.addEventListener('click', clearInput);
 
 setConnectedUI(false);
 </script>
