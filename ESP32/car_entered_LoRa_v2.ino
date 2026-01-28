@@ -66,6 +66,9 @@ ImuState imuState = IMU_WAIT_UP;
 uint32_t imuStateStartMs = 0;
 uint32_t imuCooldownStartMs = 0;
 
+#define SDA 42
+#define SCL 41
+
 // ==================== HC-SR04 ====================
 #define TRIGGER_PIN   7
 #define ECHO_PIN      6
@@ -139,7 +142,7 @@ void setup() {
 
   showStatus("Booting...", "entry node");
 
-  Wire.begin();
+  Wire.begin(SDA, SCL);
   if (!mpu.begin()) {
     showStatus("MPU6050 FAIL");
     while (1) delay(100);
