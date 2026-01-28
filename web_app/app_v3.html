@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Parking Lot Free Spaces BLE</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    .centered { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+    .section { margin-bottom: 2em; width: 100%; max-width: 520px; }
+    .label { font-weight:bold; margin-bottom: 0.5em; }
+    #status { color:#d13a30; margin-left: 0.8em; }
+    #freeSpaces { font-size:2em; color:#2065d0; }
+    #modeValue { font-size:1.4em; color:#222; }
+    #errorMsg { color:red; margin-top:0.7em; min-height:1.1em; }
+    .row { display:flex; justify-content:center; align-items:center; gap:0.8em; flex-wrap:wrap; }
+    button, input[type=text] { font-size:1.1em; }
+    input[type=text]{ width:10em; text-align:center; padding:0.4em; }
+    .keypad {
+      display:grid; grid-template-columns:repeat(3, 4.2em);
+      grid-auto-rows:3.2em; gap:0.6em; justify-content:center;
+      margin-top:1em; user-select:none;
+    }
+    .keypad button { width:4.2em; height:3.2em; font-size:1.2em; }
+    .button-row { display:flex; justify-content:center; margin-top:0.8em; gap:2em; }
+    #min1, #plus1 { width:4em; height:2.6em; font-size:1.2em; }
+    .mode-row { display:flex; justify-content:center; gap:1em; flex-wrap:wrap; margin-top:0.8em; }
+    .mode-row button { min-width:10em; height:2.8em; font-size:1.05em; }
+    .small { font-size:0.95em; color:#444; }
+  </style>
+</head>
+<body>
+<div class="centered">
+  <h2>Parking Lot Display Manager</h2>
+
+  <div class="section">
+    <div class="row">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+      <span id="status">Disconnected</span>
+    </div>
+    <div class="small">Auto mode switches: 8:00 AM (IMU), 8:00 PM (DIST)</div>
+  </div>
+
+  <div class="section">
+    <div class="label">Number of Free Spaces:</div>
+    <div id="freeSpaces">?</div>
+    <div>Last update: <span id="lastUpdate">never</span></div>
+  </div>
+
+  <div class="section">
+    <div class="label">Current Mode:</div>
+    <div id="modeValue">?</div>
+  </div>
+
+  <div class="section">
+    <div class="label">Set Number of Free Spaces</div>
+    <div class="row">
+      <input type="text" id="freeSpacesInput" placeholder="Enter number" readonly inputmode="none" autocomplete="off">
+      <button id="saveBtn" disabled>Save update</button>
+    </div>
+
+    <div class="keypad" aria-label="Digit keypad">
+      <button type="button" class="digit" data-digit="1">1</button>
+      <button type="button" class="digit" data-digit="2">2</button>
+      <button type="button" class="digit" data-digit="3">3</button>
+      <button type="button" class="digit" data-digit="4">4</button>
+      <button type="button" class="digit" data-digit="5">5</button>
+      <button type="button" class="digit" data-digit="6">6</button>
+      <button type="button" class="digit" data-digit="7">7</button>
+      <button type="button" class="digit" data-digit="8">8</button>
+      <button type="button" class="digit" data-digit="9">9</button>
+      <button type="button" id="backspaceBtn">⌫</button>
+      <button type="button" class="digit" data-digit="0">0</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </div>
+
+    <div id="errorMsg"></div>
+  </div>
+
+  <div class="section">
+    <div class="label">Update Manually</div>
+    <div class="button-row">
+      <button id="min1" disabled>-1</button>
+      <button id="plus1" disabled>+1</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Manual Mode Switch</div>
+    <div class="mode-row">
+      <button id="forceImuBtn" disabled>Force IMU Mode</button>
+      <button id="forceDistBtn" disabled>Force DIST Mode</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SERVICE_UUID = '8c055cbe-b517-4134-bb83-a4c4b05944ba';
+const FREE_CHAR_UUID = '24b27f5a-8187-467c-81c9-b4480741d580';
+// Must match the new UUID in ble_heltec_v2.ino:
+const MODE_CHAR_UUID = '3dfb7f69-1a52-4ce8-8b0d-8c2d0f0d7a11';
+
+let bleDevice = null;
+let bleServer = null;
+let freeChar = null;
+let modeChar = null;
+
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const statusSpan = document.getElementById('status');
+const freeSpacesDiv = document.getElementById('freeSpaces');
+const modeValueDiv = document.getElementById('modeValue');
+const freeSpacesInput = document.getElementById('freeSpacesInput');
+const saveBtn = document.getElementById('saveBtn');
+const errorMsg = document.getElementById('errorMsg');
+const lastUpdate = document.getElementById('lastUpdate');
+const min1Btn = document.getElementById('min1');
+const plus1Btn = document.getElementById('plus1');
+const clearBtn = document.getElementById('clearBtn');
+const backspaceBtn = document.getElementById('backspaceBtn');
+const digitButtons = document.querySelectorAll('.digit');
+const forceImuBtn = document.getElementById('forceImuBtn');
+const forceDistBtn = document.getElementById('forceDistBtn');
+
+freeSpacesInput.addEventListener('focus', () => freeSpacesInput.blur());
+freeSpacesInput.addEventListener('mousedown', (e) => e.preventDefault());
+freeSpacesInput.addEventListener('touchstart', (e) => e.preventDefault());
+
+function setConnectedUI(connected) {
+  statusSpan.textContent = connected ? 'Connected' : 'Disconnected';
+  statusSpan.style.color = connected ? '#24af37' : '#d13a30';
+  connectBtn.disabled = connected;
+  disconnectBtn.disabled = !connected;
+  saveBtn.disabled = !connected;
+  min1Btn.disabled = !connected;
+  plus1Btn.disabled = !connected;
+  digitButtons.forEach(b => b.disabled = !connected);
+  clearBtn.disabled = !connected;
+  backspaceBtn.disabled = !connected;
+  forceImuBtn.disabled = !connected;
+  forceDistBtn.disabled = !connected;
+}
+
+function updateFreeSpacesDisplay(val) {
+  freeSpacesDiv.textContent = val;
+  lastUpdate.textContent = new Date().toLocaleTimeString();
+}
+
+function updateModeDisplay(val) {
+  modeValueDiv.textContent = val;
+}
+
+function showError(text) { errorMsg.style.color="red"; errorMsg.textContent=text; }
+function showSuccess(text) {
+  errorMsg.style.color="green";
+  errorMsg.textContent=text;
+  setTimeout(() => { errorMsg.textContent=""; errorMsg.style.color="red"; }, 1200);
+}
+
+async function connectToBle() {
+  errorMsg.textContent = '';
+  try {
+    if (!navigator.bluetooth) { showError("Web Bluetooth not available."); return; }
+
+    bleDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+    bleServer = await bleDevice.gatt.connect();
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+
+    freeChar = await service.getCharacteristic(FREE_CHAR_UUID);
+    modeChar = await service.getCharacteristic(MODE_CHAR_UUID);
+
+    setConnectedUI(true);
+
+    // Read initial values
+    updateFreeSpacesDisplay(new TextDecoder().decode(await freeChar.readValue()));
+    updateModeDisplay(new TextDecoder().decode(await modeChar.readValue()));
+
+    // Subscribe to notifications
+    await freeChar.startNotifications();
+    freeChar.addEventListener('characteristicvaluechanged', (e) => {
+      updateFreeSpacesDisplay(new TextDecoder().decode(e.target.value));
+    });
+
+    await modeChar.startNotifications();
+    modeChar.addEventListener('characteristicvaluechanged', (e) => {
+      updateModeDisplay(new TextDecoder().decode(e.target.value));
+    });
+
+  } catch (e) {
+    showError("BLE Connection failed: " + e);
+    setConnectedUI(false);
+  }
+}
+
+function onDisconnected() {
+  setConnectedUI(false);
+  freeSpacesDiv.textContent = "?";
+  modeValueDiv.textContent = "?";
+  lastUpdate.textContent = "never";
+  showError("Device disconnected.");
+}
+
+async function disconnectBle() {
+  if (bleDevice && bleDevice.gatt.connected) await bleDevice.gatt.disconnect();
+}
+
+function appendDigit(d) { if (freeSpacesInput.value === "0") freeSpacesInput.value = ""; freeSpacesInput.value += String(d); }
+function backspace() { freeSpacesInput.value = freeSpacesInput.value.slice(0, -1); }
+function clearInput() { freeSpacesInput.value = ""; }
+
+async function bleWriteChar(characteristic, str) {
+  if (!characteristic) throw new Error("BLE not connected");
+  const encoder = new TextEncoder();
+  await characteristic.writeValue(encoder.encode(str));
+}
+
+async function saveUpdate() {
+  const value = freeSpacesInput.value.trim();
+  if (!/^\d+$/.test(value)) { showError("invalid input"); return; }
+  try {
+    await bleWriteChar(freeChar, value);
+    showSuccess("Update sent!");
+    clearInput();
+  } catch (e) { showError("Write failed: " + e); }
+}
+
+async function changeByOne(delta) {
+  try {
+    await bleWriteChar(freeChar, delta > 0 ? "inc" : "dec");
+    showSuccess("Update sent!");
+  } catch (e) { showError("Write failed: " + e); }
+}
+
+async function forceMode(modeStr) {
+  try {
+    await bleWriteChar(modeChar, modeStr); // writes "MODE:IMU" / "MODE:DIST"
+    showSuccess("Sent: " + modeStr);
+  } catch (e) { showError("Write failed: " + e); }
+}
+
+// Auto scheduler (optional; unchanged behavior)
+function todayKey(prefix) {
+  const d = new Date();
+  return `${prefix}-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function schedulerTick() {
+  if (!modeChar) return;
+
+  const now = new Date();
+  const hh = now.getHours();
+  const mm = now.getMinutes();
+
+  if (hh === 20 && mm === 0) {
+    const k = todayKey("sentDist");
+    if (!localStorage.getItem(k)) {
+      await forceMode("MODE:DIST");
+      localStorage.setItem(k, "1");
+    }
+  }
+
+  if (hh === 8 && mm === 0) {
+    const k = todayKey("sentImu");
+    if (!localStorage.getItem(k)) {
+      await forceMode("MODE:IMU");
+      localStorage.setItem(k, "1");
+    }
+  }
+}
+
+// Events
+connectBtn.addEventListener('click', connectToBle);
+disconnectBtn.addEventListener('click', disconnectBle);
+saveBtn.addEventListener('click', saveUpdate);
+min1Btn.addEventListener('click', () => changeByOne(-1));
+plus1Btn.addEventListener('click', () => changeByOne(+1));
+digitButtons.forEach(btn => btn.addEventListener('click', () => appendDigit(btn.dataset.digit)));
+backspaceBtn.addEventListener('click', backspace);
+clearBtn.addEventListener('click', clearInput);
+forceImuBtn.addEventListener('click', () => forceMode("MODE:IMU"));
+forceDistBtn.addEventListener('click', () => forceMode("MODE:DIST"));
+
+setConnectedUI(false);
+setInterval(schedulerTick, 15000);
+</script>
+</body>
+</html>
