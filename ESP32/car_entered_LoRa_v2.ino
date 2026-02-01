@@ -1,11 +1,22 @@
 /*
-  car_entered_LoRa.ino
-  --------------------
-  Sensor node (ENTRY): sends LoRa payload "dec" when a vehicle enters.
+  car_exit_LoRa.ino
+  -----------------
+  Sensor node (EXIT): sends LoRa payload "inc" when a vehicle exits.
 
-  Same mode behavior and mode commands as car_exit_LoRa.ino:
-    "MODE:IMU"  -> IMU detection
-    "MODE:DIST" -> distance detection
+  Modes:
+  - IMU mode (day): gate motion detected using MPU6050.
+      Requirement: detect +Z acceleration event followed by -Z event
+      within a time window, then trigger once.
+  - DIST mode (night): HC-SR04 detects object within 1m continuously >1s.
+
+  Also listens for LoRa broadcast commands:
+    "MODE:IMU"  -> switch to IMU mode
+    "MODE:DIST" -> switch to distance mode
+
+  Hardware:
+  - Heltec WiFi LoRa 32 V3
+  - MPU6050 via I2C
+  - HC-SR04 TRIG/ECHO
 */
 
 #include <Wire.h>
@@ -56,18 +67,23 @@ volatile DetectMode mode = MODE_IMU;
 // ==================== IMU ====================
 Adafruit_MPU6050 mpu;
 
-static const float Z_POS_THRESH = +3.0f;   // m/s^2
-static const float Z_NEG_THRESH = -3.0f;   // m/s^2
-static const uint32_t IMU_UPDOWN_TIMEOUT_MS = 3000;
-static const uint32_t IMU_COOLDOWN_MS = 2000;
+// Tune these thresholds for your gate mounting:
+// A “gate going up” event should exceed +Z threshold,
+// then “gate coming down” should exceed -Z threshold.
+static const float X_POS_THRESH = +2.0f;   // m/s^2
+static const float X_NEG_THRESH = -2.0f;   // m/s^2
+static const float X_POS_DEG_THRESH = +60;   // m/s^2
+static const float X_NEG_DEG_THRESH = -60;   // m/s^2
+static const uint32_t IMU_UPDOWN_TIMEOUT_MS = 3000; // must complete sequence within 3s
+static const uint32_t IMU_COOLDOWN_MS = 2000;       // after triggering, ignore motion for a bit
 
 enum ImuState { IMU_WAIT_UP, IMU_WAIT_DOWN, IMU_COOLDOWN };
 ImuState imuState = IMU_WAIT_UP;
 uint32_t imuStateStartMs = 0;
 uint32_t imuCooldownStartMs = 0;
 
-#define SDA 42
-#define SCL 41
+static const int MPU_SDA = 41;
+static const int MPU_SCL = 42;
 
 // ==================== HC-SR04 ====================
 #define TRIGGER_PIN   7
@@ -85,22 +101,29 @@ bool distTriggered = false;
 static RadioEvents_t RadioEvents;
 bool lora_idle = true;
 
-void OnTxDone(void) { lora_idle = true; }
-void OnTxTimeout(void) { Radio.Sleep(); lora_idle = true; }
+void OnTxDone(void) {
+  lora_idle = true;
+}
 
-void sendDecPacket() {
+void OnTxTimeout(void) {
+  Radio.Sleep();
+  lora_idle = true;
+}
+
+void sendIncPacket() {
   if (!lora_idle) return;
 
-  const char *payload = "dec";
+  const char *payload = "inc";
   Radio.Send((uint8_t*)payload, strlen(payload));
   lora_idle = false;
 
-  showStatus("car has entered", "sent dec");
+  showStatus("car has exited", "sent inc");
 }
 
 void handleModeCommand(const char *cmd) {
   if (strcmp(cmd, "MODE:IMU") == 0) {
     mode = MODE_IMU;
+    // Reset state machines
     imuState = IMU_WAIT_UP;
     imuStateStartMs = millis();
     distTriggered = false;
@@ -117,10 +140,12 @@ void handleModeCommand(const char *cmd) {
 }
 
 void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
+  // Copy to buffer and null-terminate (safe for strcmp)
   uint16_t n = (size < (RX_BUF_SIZE - 1)) ? size : (RX_BUF_SIZE - 1);
   memcpy(rxBuf, payload, n);
   rxBuf[n] = '\0';
 
+  // Only care about mode commands here
   if (strncmp(rxBuf, "MODE:", 5) == 0) {
     Serial.printf("RX cmd: %s\n", rxBuf);
     handleModeCommand(rxBuf);
@@ -140,16 +165,21 @@ void setup() {
   display.clear();
   display.display();
 
-  showStatus("Booting...", "entry node");
+  showStatus("Booting...", "exit node");
 
-  Wire.begin(SDA, SCL);
-  if (!mpu.begin()) {
+  // Init I2C + MPU6050
+  Wire1.begin(MPU_SDA, MPU_SCL);
+  Wire1.setClock(100000);
+  if (!mpu.begin(0x68, &Wire1)) {
     showStatus("MPU6050 FAIL");
     while (1) delay(100);
   }
+  // Gyro and accelerometer
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
 
+  // LoRa init
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
 
   RadioEvents.TxDone = OnTxDone;
@@ -174,22 +204,33 @@ void setup() {
 }
 
 void loop() {
+
+  // Keep LoRa in RX whenever idle
   if (lora_idle) {
     Radio.Rx(0);
     lora_idle = false;
   }
   Radio.IrqProcess();
 
+  // Detection logic
   const uint32_t now = millis();
 
   if (mode == MODE_IMU) {
+    // IMU gate sequence: +Z then -Z
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-    float z = a.acceleration.z;
+    float x = a.acceleration.x;
+    float x_deg = g.gyro.x;
+    
+    // Print for debugging
+    Serial.println("Rotation X: ");
+    Serial.println(x_deg);
+    Serial.println("Acceleration X: ");
+    Serial.println(x);
 
     switch (imuState) {
       case IMU_WAIT_UP:
-        if (z > Z_POS_THRESH) {
+        if (x > X_POS_THRESH) {
           imuState = IMU_WAIT_DOWN;
           imuStateStartMs = now;
           showStatus("Gate UP detected", "waiting DOWN");
@@ -198,10 +239,11 @@ void loop() {
 
       case IMU_WAIT_DOWN:
         if (now - imuStateStartMs > IMU_UPDOWN_TIMEOUT_MS) {
-          imuState = IMU_WAIT_UP;
+          imuState = IMU_WAIT_UP; // timed out, restart
           showStatus("Gate timeout", "waiting UP");
-        } else if (z < Z_NEG_THRESH) {
-          sendDecPacket();
+        } else if (x < X_NEG_THRESH) {
+          // Sequence complete -> trigger once
+          sendIncPacket();
           imuState = IMU_COOLDOWN;
           imuCooldownStartMs = now;
         }
@@ -217,7 +259,10 @@ void loop() {
 
     delay(50);
   } else {
+    // Distance mode: object < 1m continuously for > 1s -> send once until object leaves
     float dist_cm = sonar.ping_cm();
+    Serial.println("Ping dist:");
+    Serial.println(dist_cm);
     float dist_m = dist_cm / 100.0f;
     bool inRange = (dist_cm > 0 && dist_m < TARGET_DIST_M);
 
@@ -227,8 +272,10 @@ void loop() {
     }
 
     if (inRange && !distTriggered) {
+      printfln("In range condition entered");
+      delay(1000);
       if (now - inRangeStartMs >= REQUIRED_MS) {
-        sendDecPacket();
+        sendIncPacket();
         distTriggered = true;
       }
     }
@@ -239,6 +286,7 @@ void loop() {
 
     prevInRange = inRange;
 
+    // Optional status display
     if (!inRange) {
       showStatus("Mode: DIST", "Waiting for car");
     }
