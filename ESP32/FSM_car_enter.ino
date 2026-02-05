@@ -58,7 +58,6 @@ unsigned long inRangeStart = 0;
 bool sentEvent = false;        // True if we've already sent inc for current detection
 bool showEventMessage = false;
 unsigned long eventMessageStart = 0;
-bool transmitting; // Keep track if a packet is being sent
 
 void showDistWaiting() {
   display.clear();
@@ -122,7 +121,6 @@ void loop() {
   switch(radio_state) {
     // Radio methods only ever called from within this switch case
     case STATE_TX: 
-      transmitting = true;
       strcpy(txpacket, "inc");
       Serial.printf("[HC-SR04] Object for >1s, sending \"%s\"\n", txpacket);
       Radio.Send((uint8_t *)txpacket, strlen(txpacket));
@@ -141,11 +139,6 @@ void loop() {
       break;
     default:
       break;
-  }
-
-  // Stop sensor logic when transmitting
-  if (transmitting) {
-    return;
   }
 
   // Sensor FSM - distance sensor vs. IMU
@@ -173,7 +166,7 @@ void loop() {
         if (!sentEvent && (now - inRangeStart >= REQUIRED_MS)) {
           // Object has stayed in range for required time, event was not yet sent
           showEventMessage = true;
-          eventMessageStart = millis();
+          eventMessageStart = now;
           sentEvent = true;
           showCarExit();
           // Packet will now be sent on the next loop by setting state to STATE_TX
@@ -218,7 +211,6 @@ void switchSensorMode(const char *mode) {
 void OnTxDone(void) { 
   Serial.println("onTXDone");
   radio_state=STATE_RX; // Set back to default mode of RX after packet sent
-  transmitting = false; // Allow sensor logic to start again
 }
 
 void OnTxTimeout(void) {
