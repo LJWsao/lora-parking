@@ -1,7 +1,18 @@
+/* 
+car exit code 
+
+EXIT sensor node: sends LoRa payload "inc" when a vehicle exits.
+
+*/
+
 #include <NewPing.h>
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
 #include "HT_SSD1306Wire.h"
+
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
 
 #define TRIGGER_PIN   7
 #define ECHO_PIN      6
@@ -21,7 +32,7 @@ NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
 char txpacket[BUFFER_SIZE];
 char rxpacket[BUFFER_SIZE];
 
-// Radio definitions 
+// ====== Radio definitions =======
 static RadioEvents_t RadioEvents;
 void OnTxDone(void);
 void OnTxTimeout(void);
@@ -43,6 +54,21 @@ typedef enum
     IMU,
 }sensor_states_t;
 sensor_states_t sens_state;
+
+// ======= IMU =======
+Adafruit_MPU6050 mpu;
+
+static const float RAISED_THRESH = 60; // raised limit in degrees
+static const float LOW_THRESH = 10; //lowered limit in degrees
+// Callibration constants
+static const float ACCEL_X_OFFSET = 0;
+static const float ACCEL_Y_OFFSET = 0;
+static const float ACCEL_Y_OFFSET = 0;
+
+static const int MPU_SDA = 41;
+static const int MPU_SCL = 42;
+// Tracking whether gate has been raised
+bool raise_start = false; 
 
 // Define OLED screen
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED);
@@ -101,9 +127,25 @@ void setup() {
     LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
     0, true, 0, 0, LORA_IQ_INVERSION_ON, true );
 
-    // Define default state for radio + sensor
-    radio_state=STATE_RX;
-    sens_state=DIST;
+  // Define default state for radio + sensor
+  radio_state=STATE_RX;
+  sens_state=DIST;
+
+  // ==== IMU initialization ====
+  Wire1.begin(MPU_SDA, MPU_SCL);
+  Wire1.setClock(100000);
+
+  // Try to initialize!
+  if (!mpu.begin()) {
+    Serial.println("Failed to find MPU6050 chip");
+    while (1) {
+      delay(10);
+    }
+  }
+  Serial.println("MPU6050 Found!");
+
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 }
 
 void loop() {
@@ -178,21 +220,43 @@ void loop() {
         sentEvent = false;
       }
 
-      // Display event message for 3 seconds, then return to waiting
-      if (showEventMessage) {
-        if (now - eventMessageStart >= 3000) {
-          showEventMessage = false;
-          showDistWaiting();
-        }
-      }
-
       prevInRange = inRange;
       break;
     } // case DIST closing brace
-    case IMU: 
+    case IMU: {
+      sensors_event_t a;
+      mpu.getEvent(&a);
+      float ax = a.acceleration.x + ACCEL_X_OFFSET;
+      float ay = a.acceleration.y + ACCEL_Y_OFFSET;
+      float az = a.acceleration.z + ACCEL_Z_OFFSET;
+      float roll_ang = atan(ay/sqrt(ax*ax + az*az))*(3.14159/180);
+      float pitch_ang = atan(-ax/sqrt(ay*ay + az*az))*(3.14159/180);
+      System.printf("Roll angle deg: %f", roll_ang);
+      System.printf("Pitch angle deg: %f", pitch_ang);
+
+      if (!raise_start && (roll_ang > RAISED_THRESH)) {
+        raise_start = true;
+      }
+      else if (raise_start && (roll_ang < LOW_THRESH)) {
+        raise_start = false;
+        showEventMessage = true;
+        eventMessageStart = now;
+        showCarExit();
+        // Packet will now be sent on the next loop by setting state to STATE_TX
+        radio_state = STATE_TX;
+      }
       break;
+    }
     default:
       break;
+  }
+
+  // Display event message for 2 seconds, then return to waiting
+  if (showEventMessage) {
+    if (now - eventMessageStart >= 2000) {
+      showEventMessage = false;
+      showDistWaiting();
+    }
   }
 }
 
