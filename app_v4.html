@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Parking Lot Free Spaces BLE</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    .centered { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+    .section { margin-bottom: 2em; width: 100%; max-width: 520px; }
+    .label { font-weight:bold; margin-bottom: 0.5em; }
+    #status { color:#d13a30; margin-left: 0.8em; }
+    #freeSpaces { font-size:2em; color:#2065d0; }
+    #modeValue { font-size:1.4em; color:#222; }
+    #errorMsg { color:red; margin-top:0.7em; min-height:1.1em; }
+    .row { display:flex; justify-content:center; align-items:center; gap:0.8em; flex-wrap:wrap; }
+    button, input[type=text] { font-size:1.1em; }
+    input[type=text]{ width:10em; text-align:center; padding:0.4em; }
+    .keypad {
+      display:grid; grid-template-columns:repeat(3, 4.2em);
+      grid-auto-rows:3.2em; gap:0.6em; justify-content:center;
+      margin-top:1em; user-select:none;
+    }
+    .keypad button { width:4.2em; height:3.2em; font-size:1.2em; }
+    .button-row { display:flex; justify-content:center; margin-top:0.8em; gap:2em; }
+    #min1, #plus1 { width:4em; height:2.6em; font-size:1.2em; }
+    .mode-row { display:flex; justify-content:center; gap:1em; flex-wrap:wrap; margin-top:0.8em; }
+    .mode-row button { min-width:10em; height:2.8em; font-size:1.05em; }
+    .small { font-size:0.95em; color:#444; }
+    .schedule-box {
+      border:1px solid #ccc; border-radius:8px; padding:1em;
+      margin-top:0.8em; background:#fafafa;
+    }
+    .schedule-box h4 { margin: 0 0 0.6em 0; }
+    .schedule-row {
+      display:flex; flex-wrap:wrap; justify-content:center;
+      align-items:center; gap:0.6em; margin-bottom:0.6em;
+    }
+    .schedule-row label { display:flex; align-items:center; gap:0.3em; }
+    #oneOffList { list-style:none; padding:0; margin:0.6em 0 0 0; text-align:left; }
+    #oneOffList li {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:0.3em 0.5em; background:#fff; border:1px solid #ddd;
+      border-radius:4px; margin-bottom:0.3em;
+    }
+    #oneOffList li button { font-size:0.85em; padding:0.2em 0.6em; }
+    #nextSwitchInfo { font-weight:bold; color:#2065d0; }
+    .scheduler-status { margin-top:0.5em; font-size:0.9em; color:#555; }
+  </style>
+</head>
+<body>
+<div class="centered">
+  <h2>Parking Lot Display Manager</h2>
+
+  <div class="section">
+    <div class="row">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+      <span id="status">Disconnected</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Number of Free Spaces:</div>
+    <div id="freeSpaces">?</div>
+    <div>Last update: <span id="lastUpdate">never</span></div>
+  </div>
+
+  <div class="section">
+    <div class="label">Current Mode:</div>
+    <div id="modeValue">?</div>
+  </div>
+
+  <div class="section">
+    <div class="label">Set Number of Free Spaces</div>
+    <div class="row">
+      <input type="text" id="freeSpacesInput" placeholder="Enter number" readonly inputmode="none" autocomplete="off">
+      <button id="saveBtn" disabled>Save update</button>
+    </div>
+    <div class="keypad" aria-label="Digit keypad">
+      <button type="button" class="digit" data-digit="1">1</button>
+      <button type="button" class="digit" data-digit="2">2</button>
+      <button type="button" class="digit" data-digit="3">3</button>
+      <button type="button" class="digit" data-digit="4">4</button>
+      <button type="button" class="digit" data-digit="5">5</button>
+      <button type="button" class="digit" data-digit="6">6</button>
+      <button type="button" class="digit" data-digit="7">7</button>
+      <button type="button" class="digit" data-digit="8">8</button>
+      <button type="button" class="digit" data-digit="9">9</button>
+      <button type="button" id="backspaceBtn">⌫</button>
+      <button type="button" class="digit" data-digit="0">0</button>
+      <button type="button" id="clearBtn">Clear</button>
+    </div>
+    <div id="errorMsg"></div>
+  </div>
+
+  <div class="section">
+    <div class="label">Update Manually</div>
+    <div class="button-row">
+      <button id="min1" disabled>-1</button>
+      <button id="plus1" disabled>+1</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">Manual Mode Switch</div>
+    <div class="mode-row">
+      <button id="forceImuBtn" disabled>Force IMU Mode</button>
+      <button id="forceDistBtn" disabled>Force DIST Mode</button>
+    </div>
+  </div>
+
+  <!-- ============ NEW: Scheduled Mode Switching ============ -->
+  <div class="section">
+    <div class="label">Scheduled Mode Switching</div>
+
+    <div class="schedule-box">
+      <h4>Daily recurring schedule</h4>
+      <div class="schedule-row">
+        <label>
+          <input type="checkbox" id="dailyScheduleEnabled"> Enable daily schedule
+        </label>
+      </div>
+      <div class="schedule-row">
+        <label>IMU mode at: <input type="time" id="dailyImuTime" value="08:00"></label>
+        <label>DIST mode at: <input type="time" id="dailyDistTime" value="20:00"></label>
+      </div>
+      <div class="schedule-row">
+        <button id="saveDailyBtn">Save daily schedule</button>
+      </div>
+    </div>
+
+    <div class="schedule-box">
+      <h4>One-off scheduled switches</h4>
+      <div class="schedule-row">
+        <label>Date/time: <input type="datetime-local" id="oneOffDateTime"></label>
+        <label>Mode:
+          <select id="oneOffMode">
+            <option value="IMU">IMU</option>
+            <option value="DIST">DIST</option>
+          </select>
+        </label>
+        <button id="addOneOffBtn">Add</button>
+      </div>
+      <ul id="oneOffList"></ul>
+    </div>
+
+    <div class="scheduler-status">
+      <div>Next scheduled switch: <span id="nextSwitchInfo">none</span></div>
+      <div class="small">Note: keep this browser tab open for schedules to fire.</div>
+    </div>
+  </div>
+  <!-- ============ END scheduling section ============ -->
+
+</div>
+
+<script>
+const SERVICE_UUID = '8c055cbe-b517-4134-bb83-a4c4b05944ba';
+const FREE_CHAR_UUID = '24b27f5a-8187-467c-81c9-b4480741d580';
+const MODE_CHAR_UUID = '3dfb7f69-1a52-4ce8-8b0d-8c2d0f0d7a11';
+
+let bleDevice = null;
+let bleServer = null;
+let freeChar = null;
+let modeChar = null;
+
+// ---- DOM refs ----
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const statusSpan = document.getElementById('status');
+const freeSpacesDiv = document.getElementById('freeSpaces');
+const modeValueDiv = document.getElementById('modeValue');
+const freeSpacesInput = document.getElementById('freeSpacesInput');
+const saveBtn = document.getElementById('saveBtn');
+const errorMsg = document.getElementById('errorMsg');
+const lastUpdate = document.getElementById('lastUpdate');
+const min1Btn = document.getElementById('min1');
+const plus1Btn = document.getElementById('plus1');
+const clearBtn = document.getElementById('clearBtn');
+const backspaceBtn = document.getElementById('backspaceBtn');
+const digitButtons = document.querySelectorAll('.digit');
+const forceImuBtn = document.getElementById('forceImuBtn');
+const forceDistBtn = document.getElementById('forceDistBtn');
+
+// Scheduling DOM refs
+const dailyScheduleEnabled = document.getElementById('dailyScheduleEnabled');
+const dailyImuTime = document.getElementById('dailyImuTime');
+const dailyDistTime = document.getElementById('dailyDistTime');
+const saveDailyBtn = document.getElementById('saveDailyBtn');
+const oneOffDateTime = document.getElementById('oneOffDateTime');
+const oneOffMode = document.getElementById('oneOffMode');
+const addOneOffBtn = document.getElementById('addOneOffBtn');
+const oneOffList = document.getElementById('oneOffList');
+const nextSwitchInfo = document.getElementById('nextSwitchInfo');
+
+// Prevent on-screen keyboard from popping up on the readonly free-spaces input
+freeSpacesInput.addEventListener('focus', () => freeSpacesInput.blur());
+freeSpacesInput.addEventListener('mousedown', (e) => e.preventDefault());
+freeSpacesInput.addEventListener('touchstart', (e) => e.preventDefault());
+
+function setConnectedUI(connected) {
+  statusSpan.textContent = connected ? 'Connected' : 'Disconnected';
+  statusSpan.style.color = connected ? '#24af37' : '#d13a30';
+  connectBtn.disabled = connected;
+  disconnectBtn.disabled = !connected;
+  saveBtn.disabled = !connected;
+  min1Btn.disabled = !connected;
+  plus1Btn.disabled = !connected;
+  digitButtons.forEach(b => b.disabled = !connected);
+  clearBtn.disabled = !connected;
+  backspaceBtn.disabled = !connected;
+  forceImuBtn.disabled = !connected;
+  forceDistBtn.disabled = !connected;
+}
+
+function updateFreeSpacesDisplay(val) {
+  freeSpacesDiv.textContent = val;
+  lastUpdate.textContent = new Date().toLocaleTimeString();
+}
+function updateModeDisplay(val) {
+  modeValueDiv.textContent = val;
+}
+function showError(text) { errorMsg.style.color="red"; errorMsg.textContent=text; }
+function showSuccess(text) {
+  errorMsg.style.color="green";
+  errorMsg.textContent=text;
+  setTimeout(() => { errorMsg.textContent=""; errorMsg.style.color="red"; }, 1500);
+}
+
+async function connectToBle() {
+  errorMsg.textContent = '';
+  try {
+    if (!navigator.bluetooth) { showError("Web Bluetooth not available."); return; }
+    bleDevice = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+    bleServer = await bleDevice.gatt.connect();
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+    freeChar = await service.getCharacteristic(FREE_CHAR_UUID);
+    modeChar = await service.getCharacteristic(MODE_CHAR_UUID);
+    setConnectedUI(true);
+
+    updateFreeSpacesDisplay(new TextDecoder().decode(await freeChar.readValue()));
+    updateModeDisplay(new TextDecoder().decode(await modeChar.readValue()));
+
+    await freeChar.startNotifications();
+    freeChar.addEventListener('characteristicvaluechanged', (e) => {
+      updateFreeSpacesDisplay(new TextDecoder().decode(e.target.value));
+    });
+    await modeChar.startNotifications();
+    modeChar.addEventListener('characteristicvaluechanged', (e) => {
+      updateModeDisplay(new TextDecoder().decode(e.target.value));
+    });
+  } catch (e) {
+    showError("BLE Connection failed: " + e);
+    setConnectedUI(false);
+  }
+}
+
+function onDisconnected() {
+  setConnectedUI(false);
+  freeSpacesDiv.textContent = "?";
+  modeValueDiv.textContent = "?";
+  lastUpdate.textContent = "never";
+  showError("Device disconnected.");
+}
+
+async function disconnectBle() {
+  if (bleDevice && bleDevice.gatt.connected) await bleDevice.gatt.disconnect();
+}
+
+function appendDigit(d) { if (freeSpacesInput.value === "0") freeSpacesInput.value = ""; freeSpacesInput.value += String(d); }
+function backspace() { freeSpacesInput.value = freeSpacesInput.value.slice(0, -1); }
+function clearInput() { freeSpacesInput.value = ""; }
+
+async function bleWriteChar(characteristic, str) {
+  if (!characteristic) throw new Error("BLE not connected");
+  const encoder = new TextEncoder();
+  await characteristic.writeValue(encoder.encode(str));
+}
+
+async function saveUpdate() {
+  const value = freeSpacesInput.value.trim();
+  if (!/^\d+$/.test(value)) { showError("invalid input"); return; }
+  try {
+    await bleWriteChar(freeChar, value);
+    showSuccess("Update sent!");
+    clearInput();
+  } catch (e) { showError("Write failed: " + e); }
+}
+
+async function changeByOne(delta) {
+  try {
+    await bleWriteChar(freeChar, delta > 0 ? "inc" : "dec");
+    showSuccess("Update sent!");
+  } catch (e) { showError("Write failed: " + e); }
+}
+
+async function forceMode(modeStr) {
+  try {
+    await bleWriteChar(modeChar, modeStr); // writes "MODE:IMU" / "MODE:DIST"
+    showSuccess("Sent: " + modeStr);
+  } catch (e) { showError("Write failed: " + e); }
+}
+
+// =====================================================
+// ============ Scheduled Mode Switching ===============
+// =====================================================
+
+const SCHED_KEY = 'parkingModeSchedule';
+
+function defaultSchedule() {
+  return { dailyEnabled: false, dailyImu: '08:00', dailyDist: '20:00', oneOffs: [] };
+}
+
+function loadSchedule() {
+  const raw = localStorage.getItem(SCHED_KEY);
+  if (!raw) return defaultSchedule();
+  try {
+    const parsed = JSON.parse(raw);
+    return Object.assign(defaultSchedule(), parsed);
+  } catch {
+    return defaultSchedule();
+  }
+}
+
+function saveSchedule() {
+  localStorage.setItem(SCHED_KEY, JSON.stringify(schedule));
+}
+
+let schedule = loadSchedule();
+
+// Apply saved schedule to the UI
+dailyScheduleEnabled.checked = schedule.dailyEnabled;
+dailyImuTime.value = schedule.dailyImu;
+dailyDistTime.value = schedule.dailyDist;
+
+function renderOneOffs() {
+  oneOffList.innerHTML = '';
+  if (schedule.oneOffs.length === 0) {
+    const li = document.createElement('li');
+    li.style.justifyContent = 'center';
+    li.style.color = '#888';
+    li.textContent = '(none scheduled)';
+    oneOffList.appendChild(li);
+    return;
+  }
+  schedule.oneOffs.forEach((o, i) => {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = `${new Date(o.when).toLocaleString()} → ${o.mode}`;
+    const btn = document.createElement('button');
+    btn.textContent = 'Remove';
+    btn.onclick = () => {
+      schedule.oneOffs.splice(i, 1);
+      saveSchedule();
+      renderOneOffs();
+      updateNextSwitchDisplay();
+    };
+    li.appendChild(span);
+    li.appendChild(btn);
+    oneOffList.appendChild(li);
+  });
+}
+
+function nextDailyOccurrence(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+function updateNextSwitchDisplay() {
+  const candidates = [];
+  if (schedule.dailyEnabled) {
+    candidates.push({ label: `Daily IMU`, when: nextDailyOccurrence(schedule.dailyImu), mode: 'IMU' });
+    candidates.push({ label: `Daily DIST`, when: nextDailyOccurrence(schedule.dailyDist), mode: 'DIST' });
+  }
+  schedule.oneOffs.forEach(o => {
+    candidates.push({ label: `One-off → ${o.mode}`, when: o.when, mode: o.mode });
+  });
+  if (candidates.length === 0) {
+    nextSwitchInfo.textContent = 'none';
+    return;
+  }
+  candidates.sort((a, b) => a.when - b.when);
+  const next = candidates[0];
+  nextSwitchInfo.textContent = `${next.label} at ${new Date(next.when).toLocaleString()}`;
+}
+
+// Daily schedule controls
+saveDailyBtn.addEventListener('click', () => {
+  schedule.dailyEnabled = dailyScheduleEnabled.checked;
+  schedule.dailyImu = dailyImuTime.value || '08:00';
+  schedule.dailyDist = dailyDistTime.value || '20:00';
+  saveSchedule();
+  updateNextSwitchDisplay();
+  showSuccess("Daily schedule saved.");
+});
+
+dailyScheduleEnabled.addEventListener('change', () => {
+  schedule.dailyEnabled = dailyScheduleEnabled.checked;
+  saveSchedule();
+  updateNextSwitchDisplay();
+});
+
+// One-off controls
+addOneOffBtn.addEventListener('click', () => {
+  const dt = oneOffDateTime.value;
+  const mode = oneOffMode.value;
+  if (!dt) { showError("Pick a date/time first."); return; }
+  const when = new Date(dt).getTime();
+  if (when <= Date.now()) { showError("That time is in the past."); return; }
+  schedule.oneOffs.push({ when, mode });
+  schedule.oneOffs.sort((a, b) => a.when - b.when);
+  saveSchedule();
+  renderOneOffs();
+  updateNextSwitchDisplay();
+  oneOffDateTime.value = '';
+  showSuccess("One-off switch added.");
+});
+
+// The scheduler tick — fires the appropriate mode write when due
+let lastFiredMinute = '';
+
+async function schedulerTick() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const currentTime = `${hh}:${mm}`;
+  const minuteKey = now.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+
+  // --- Daily schedule ---
+  if (schedule.dailyEnabled && minuteKey !== lastFiredMinute) {
+    if (currentTime === schedule.dailyImu) {
+      if (modeChar) {
+        await forceMode("MODE:IMU");
+      } else {
+        console.warn('[Schedule] Skipping daily IMU — BLE not connected');
+      }
+      lastFiredMinute = minuteKey;
+    } else if (currentTime === schedule.dailyDist) {
+      if (modeChar) {
+        await forceMode("MODE:DIST");
+      } else {
+        console.warn('[Schedule] Skipping daily DIST — BLE not connected');
+      }
+      lastFiredMinute = minuteKey;
+    }
+  }
+
+  // --- One-off schedules ---
+  const nowMs = Date.now();
+  const due = schedule.oneOffs.filter(o => o.when <= nowMs);
+  if (due.length > 0) {
+    // Fire only the most recent due entry (in case multiple stacked up)
+    const fire = due[due.length - 1];
+    if (modeChar) {
+      await forceMode("MODE:" + fire.mode);
+    } else {
+      console.warn('[Schedule] Skipping one-off — BLE not connected');
+    }
+    schedule.oneOffs = schedule.oneOffs.filter(o => o.when > nowMs);
+    saveSchedule();
+    renderOneOffs();
+  }
+
+  updateNextSwitchDisplay();
+}
+
+// ---- General event wiring ----
+connectBtn.addEventListener('click', connectToBle);
+disconnectBtn.addEventListener('click', disconnectBle);
+saveBtn.addEventListener('click', saveUpdate);
+min1Btn.addEventListener('click', () => changeByOne(-1));
+plus1Btn.addEventListener('click', () => changeByOne(+1));
+digitButtons.forEach(btn => btn.addEventListener('click', () => appendDigit(btn.dataset.digit)));
+backspaceBtn.addEventListener('click', backspace);
+clearBtn.addEventListener('click', clearInput);
+forceImuBtn.addEventListener('click', () => forceMode("MODE:IMU"));
+forceDistBtn.addEventListener('click', () => forceMode("MODE:DIST"));
+
+// ---- Init ----
+setConnectedUI(false);
+renderOneOffs();
+updateNextSwitchDisplay();
+setInterval(schedulerTick, 30 * 1000); // tick every 30s
+schedulerTick();                        // also run once immediately
+</script>
+</body>
+</html>
