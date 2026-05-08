@@ -20446,6 +20446,16 @@
 			(embedded_fonts no)
 		)
 	)
+	(text "Author: Lamine Sao\n"
+		(exclude_from_sim no)
+		(at 210.82 196.342 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "797f105b-6108-47db-aee6-f0503eabb808")
+	)
 	(wire
 		(pts
 			(xy 134.62 67.31) (xy 140.97 67.31)
