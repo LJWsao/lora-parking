@@ -5281,8 +5281,8 @@
 		(layer "Edge.Cuts")
 		(uuid "c14f0a8a-4b78-42ac-ad5f-776c030f9e61")
 	)
-	(gr_text "Parallel Battery Board V1\nHanover Parking Tracker\nDesigned by Lamine Sao"
-		(at 149.098 129.159 0)
+	(gr_text "Parallel Battery Board V1\nProject: Hanover Parking Tracker\nDesigned by Lamine Sao"
+		(at 145.923 129.032 0)
 		(layer "F.SilkS")
 		(uuid "59b54d95-eeeb-474c-af84-21fc0d0c2944")
 		(effects
