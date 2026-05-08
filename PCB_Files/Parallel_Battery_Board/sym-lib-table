@@ -1,0 +1,6 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "ADI_MAX_40200")(type "KiCad")(uri "${KIPRJMOD}/Libraries/Symbols/ADI_MAX_40200.kicad_sym")(options "")(descr ""))
+  (lib (name "Mini_Fuse_10_9_PCB_Mount")(type "KiCad")(uri "${KIPRJMOD}/Libraries/Symbols/Mini_Fuse_10_9_PCB_Mount.kicad_sym")(options "")(descr ""))
+  (lib (name "S2B-PH-SM4-TB")(type "KiCad")(uri "${KIPRJMOD}/Libraries/Symbols/S2B-PH-SM4-TB.kicad_sym")(options "")(descr ""))
+)
